@@ -8,11 +8,14 @@ import json
 # MoneyTimer: main interface, initiates all other dialogs;
 # derivative of tkinter.Frame
 #   Class members:
-#     PERCENT_EARN    DEFAULT_HOURLY_RATE
-#     BAR_WIDTH       BAR_HEIGHT      BAR_FILL_COLOR
-#     BAR_LINE_COLOR  BAR_BG_COLOR    BAR_TEXT_COLOR
-#     BAR_TEXT_FONT   AFTER_TIME      AFTER_TIME_SEC
-#     SetupWindow     SettingsWindow    HistoryWindow
+#     SETTINGS_FILE   HISTORY_FILE    DEFAULT_HOURLY_RATE
+#     PERCENT_EARN    BAR_WIDTH       BAR_HEIGHT      
+#     BAR_FILL_COLOR  BAR_LINE_COLOR  BAR_BG_COLOR
+#     BAR_TEXT_COLOR  BAR_TEXT_FONT   AFTER_TIME
+#     AFTER_TIME_SEC  DAYS            DEFAULT_SETTINGS
+#     HISTORY_FORMAT
+#   Subclasses:
+#     SetupWindow     SettingsWindow  HistoryWindow
 #   Members:
 #     menuBar     : Menu for master
 #     upperFrame  : Frame containing timeLabel and pauseButton
@@ -20,15 +23,27 @@ import json
 #     pauseButton : Button for toggling pause of time update
 #     secSoFar    : Stores time in seconds that have been clocked
 #   Methods:
-#     setup             : initializes a SetupWindow
-#     complete_setup    : takes return of SetupWindow and begins updates
-#     update            : main update, updates members and display elements
-#     on_settings_click : opens SettingsWindow dialog allowing configuration
-#     on_history_click  : opens HistoryWindow dialog
+#     __init__           : initializes GUI elements, loads settings, creates SetupWindow
+#     setup              : initializes a SetupWindow
+#     complete_setup     : takes return of SetupWindow and begins updates
+#     auto_pause         : helper fcn for auto lunch break events
+#     auto_unpause       :   "                               "
+#     toggle_pause       : toggles whether to track time or not
+#     update             : main update, updates members and display elements
+#     make_lunch_events  : creates lunch events if needed and deletes previous lunch events
+#     on_settings_click  : opens SettingsWindow window allowing configuration
+#     configure_settings : configures settings from SettingsWindow return
+#     load_settings      : loads settings from file, filling in gaps with defaults
+#     save_settings      : saves settings to file for use on next startup
+#     on_history_click   : opens HistoryWindow window
+#     load_history       : loads history from file, ignoring current day
+#     save_history       : saves history to file for use on next startup
+#     destroy            : modified to save settings and history
 class MoneyTimer(Frame):
 
   # files
   SETTINGS_FILE = "money_timer_settings.json"
+  HISTORY_FILE  = "money_timer_history.json"
   # constants
   DEFAULT_HOURLY_RATE = 21.5 # $/hr
   PERCENT_EARN = 0.71
@@ -46,7 +61,7 @@ class MoneyTimer(Frame):
   DEFAULT_SETTINGS = {"autoLunchEnabled"  : False,
                       "autoLunchStartTime": [12, 0],
                       "autoLunchStopTime" : [13, 0],
-                      "hourlyRate": 21.50,
+                      "hourlyRate"        : 21.50,
                       "Mon"  : 8.0,
                       "Tues" : 8.0,
                       "Wed"  : 8.0,
@@ -54,6 +69,13 @@ class MoneyTimer(Frame):
                       "Fri"  : 8.0,
                       "Sat"  : 0.0,
                       "Sun"  : 0.0}
+  HISTORY_FORMAT = {"year": int,
+                    "mon" : int,
+                    "day" : int,
+                    "wday": str,
+                    "secSoFar": float,
+                    "earnings": float,
+                    "percent" : float}
 
 
   ################
@@ -67,37 +89,40 @@ class MoneyTimer(Frame):
   #     invalidLabel : displays error message if invalid input
   #     secSoFar     : calculated seconds between input time and current time
   #   Methods:
+  #     __init__         : sets up GUI and member data
   #     check_input      : traced to inputVar, validates input and calculates secSoFar
   #     destroy          : modified with conditional; calls master.complete_setup
   class SetupWindow(Toplevel):
     
+    ########
+    # __init__: initializes GUI elements and data
     def __init__(self, root):
       # tkinter stuff
       Toplevel.__init__(self, root, width = MoneyTimer.BAR_WIDTH)
       self.title("Setup [Money Timer]")
       self.lift()
 
-      self.upperFrame = Frame(self)
+      self.frame = Frame(self)
 
-      self.infoLabel = Label(self.upperFrame,
+      self.infoLabel = Label(self,
                              padx = 5,
                              pady = 5,
-                             text = "Start time (hh:mm):")
-      self.infoLabel.pack(side = "left")
+                             text = "Start time (hh:mm)\nLeave blank to use current time.")
+      self.infoLabel.pack(side = "top")
 
       self.inputVar = StringVar(self)
       self.inputVar.trace("w", self.check_input)
-      self.inputEntry = Entry(self.upperFrame,
+      self.inputEntry = Entry(self.frame,
                               width = 5,
                               textvariable = self.inputVar)
       self.inputEntry.bind("<Return>", self.destroy)
       self.inputEntry.pack(side = "left")
 
-      self.okButton = Button(self.upperFrame,
+      self.okButton = Button(self.frame,
                              text = "OK",
                              command = self.destroy)
       self.okButton.pack(side = "left")
-      self.upperFrame.pack(side = "top")
+      self.frame.pack(side = "top")
 
       # invalid entry label
       self.invalidLabel = Label(self,
@@ -132,8 +157,9 @@ class MoneyTimer(Frame):
       except Exception: # invalid input
         return
 
-      if intHr < 0 or intHr > 24 or intMin < 0 or intMin > 60: # invalid input
-        return
+      if len(s) > 0:
+        if intHr < 0 or intHr > 24 or intMin < 0 or intMin > 60: # invalid input
+          return
 
       # calculate time if valid time entered
       if len(s) != 0:
@@ -159,7 +185,7 @@ class MoneyTimer(Frame):
       else:
         self.invalidLabel.pack()
   # SetupWindow
-  ###############
+  ################
 
   ################
   # SettingsWindow: allows for configuration of settings
@@ -171,6 +197,7 @@ class MoneyTimer(Frame):
   #     confirmButton  : Button to commit setting changes; destroys window if entries valid
   #     cancel         : Button to cancel setting changes; destroys window
   #   Methods:
+  #     __init__                : calls create_widgets, then loads current settings
   #     create_widgets          : creates all GUI elements
   #     load_settings           : loads current settings
   #     toggle_auto_lunch_break : toggles automatic lunch break setting
@@ -178,8 +205,11 @@ class MoneyTimer(Frame):
   #     clip_goal_entries       : clips daily goal entries to 4 chars
   #     clip_rate_entry         : clips rate entry to 6 chars
   #     on_confirm_click        : validates entries, calls master.configure, destroys window
+  #     parse_time              : parses a string into hours and minutes if valid; else returns None
   class SettingsWindow(Toplevel):
 
+    ########
+    # __init__: initializes SettingsWindow instance
     def __init__(self, root):
       # tkinter stuff
       Toplevel.__init__(self, root, width = MoneyTimer.BAR_WIDTH)
@@ -189,6 +219,8 @@ class MoneyTimer(Frame):
       self.create_widgets()
       self.load_settings()
 
+    ########
+    # create_widgets: set up all GUI elements
     def create_widgets(self):
       # auto lunch break checkbox
       self.autoLunchBreak = {}
@@ -297,6 +329,8 @@ class MoneyTimer(Frame):
 
       self.lowerFrame.pack(side = "top")
 
+    ########
+    # load_settings: loads current settings from parent MoneyTimer
     def load_settings(self):
       settings = self.master.settings
       if settings["autoLunchEnabled"]:
@@ -313,6 +347,8 @@ class MoneyTimer(Frame):
       for day in MoneyTimer.DAYS:
         self.goals[day]["var"].set(str(settings[day]))
 
+    ########
+    # toggle_auto_lunch_break: toggles states of lunch break entries
     def toggle_auto_lunch_break(self, *args):
       if self.autoLunchBreak["checkboxVar"].get() == 1:
         self.autoLunchBreak["startTimeEntry"].config(state = NORMAL)
@@ -321,6 +357,8 @@ class MoneyTimer(Frame):
         self.autoLunchBreak["startTimeEntry"].config(state = DISABLED)
         self.autoLunchBreak["stopTimeEntry"].config(state = DISABLED)
 
+    ########
+    # clip_time_entries: limits max input size of times entries
     def clip_time_entries(self, *args):
       s = self.autoLunchBreak["startTimeVar"].get()
       if len(s) > 5:
@@ -329,17 +367,23 @@ class MoneyTimer(Frame):
       if len(s) > 5:
         self.autoLunchBreak["stopTimeVar"].set(s[:5])
 
+    ########
+    # clip_goal_entries: limits max input size of daily goals entries
     def clip_goal_entries(self, *args):
       for day in MoneyTimer.DAYS:
         s = self.goals[day]["var"].get()
         if len(s) > 4:
           self.goals[day]["var"].set(s[:4])
 
+    ########
+    # clip_rate_entry: limits max input size of hourly rate entry
     def clip_rate_entry(self, *args):
       s = self.hourlyRate["var"].get()
       if len(s) > 6:
         self.hourlyRate["var"].set(s[:6])
 
+    ########
+    # on_confirm_click: validates entries and handles cleanup and updating of settings
     def on_confirm_click(self):
       inputsValid = True
 
@@ -394,7 +438,7 @@ class MoneyTimer(Frame):
         self.destroy()
 
     ########
-    # parse_time
+    # parse_time: parses a string into hours and minutes, if valid; else, returns None
     def parse_time(self, s):
       try:
         if len(s) == 5 and s[2] == ':': # format hh:mm
@@ -411,10 +455,58 @@ class MoneyTimer(Frame):
       if intHr < 0 or intMin < 0 or intMin > 60:
         return None
 
-      return (intHr, intMin)
-  # SettingsWindow
-  ###############
+      return [intHr, intMin]
 
+    ########
+    # destroy: augmented to modify bool in parent
+    def destroy(self):
+      self.master.settingsOpen = False
+      super().destroy()
+  # SettingsWindow
+  ################
+
+  ################
+  # HistoryWindow: displays log of daily stats;
+  # derivative of Toplevel
+  #   Members:
+  #   Methods:
+  #     __init__ : creates display
+  class HistoryWindow(Toplevel):
+
+    def __init__(self, root):
+      Toplevel.__init__(self, root)
+      self.scrollbar = Scrollbar(self)
+      self.scrollbar.pack(side = "right", fill = Y)
+      self.text = Text(self,
+                       width = 50,
+                       yscrollcommand = self.scrollbar.set)
+      self.text.pack(side = "right", fill = Y)
+      self.scrollbar.config(command = self.text.yview)
+      for entry in self.master.history:
+        monStr  = str(entry["mon"]) if entry["mon"] >= 10 else "0" + str(entry["mon"])
+        dayStr  = str(entry["day"]) if entry["day"] >= 10 else "0" + str(entry["day"])
+        intHr   = int(entry["secSoFar"] // 3600)
+        intMin  = int(entry["secSoFar"] % 3600 // 60)
+        intSec  = int(entry["secSoFar"] % 60)
+        strMin  = str(intMin) if intMin >= 10 else "0" + str(intMin)
+        strSec  = str(intSec) if intSec >= 10 else "0" + str(intSec)
+
+        inputStr = "{}-{}-{} {}\t{}:{}:{}\t${:.2f}\t{:.1f}%\n".format(entry["year"],
+                                                                      monStr,
+                                                                      dayStr,
+                                                                      entry["wday"],
+                                                                      intHr,
+                                                                      strMin,
+                                                                      strSec,
+                                                                      entry["earnings"],
+                                                                      entry["percent"])
+        self.text.insert(END, inputStr)
+
+      self.text.config(state = DISABLED)
+
+    def destroy(self):
+      self.master.historyOpen = False
+      super().destroy()
 
 
   ########
@@ -423,6 +515,8 @@ class MoneyTimer(Frame):
     Frame.__init__(self, root)
     self.settings = self.load_settings()
     self.paused = False
+    self.settingsOpen = False
+    self.historyOpen  = False
     if self.settings["autoLunchEnabled"]:
       self.startLunchEvt, self.endLunchEvt = self.make_lunch_events()
     else:
@@ -493,8 +587,13 @@ class MoneyTimer(Frame):
   # complete_setup: completes setup and begins updates
   def complete_setup(self, secSoFar):
     self.secSoFar = secSoFar
-    self.startDay = MoneyTimer.DAYS[localtime().tm_wday]
+    currTime = localtime()
+    self.startDay = MoneyTimer.DAYS[currTime.tm_wday]
+    self.startDate = [currTime.tm_year, currTime.tm_mon, currTime.tm_mday]
     self.todaysGoal = self.settings[self.startDay]
+
+    # has to be done after startDay and startDate are initialized
+    self.history = self.load_history()
 
     self.update()
     del self.setupWindow
@@ -529,7 +628,7 @@ class MoneyTimer(Frame):
         pass
 
   ########
-  # update: updates secSoFar and displays
+  # update: updates secSoFar and GUI elements
   def update(self):
     self.secSoFar += MoneyTimer.AFTER_TIME_SEC
 
@@ -573,17 +672,26 @@ class MoneyTimer(Frame):
     breakStart = self.settings["autoLunchStartTime"][0] * 3600 + self.settings["autoLunchStartTime"][1] * 60
     breakEnd   = self.settings["autoLunchStopTime"][0]  * 3600 + self.settings["autoLunchStopTime"][1] * 60
 
+    # make events if they haven't occured yet today
     if breakStart - ctSec > 0:
       startAfterEvt = self.after(1000 * (breakStart - ctSec), self.auto_pause)
-      endAfterEvt   = self.after(1000 * (breakEnd - ctSec), self.auto_unpause)
-      return startAfterEvt, endAfterEvt
     else:
-      return None, None
+      startAfterEvt = None
+    if breakEnd - ctSec > 0:
+      endAfterEvt   = self.after(1000 * (breakEnd - ctSec), self.auto_unpause)
+    else:
+      endAfterEvt = None
+
+    return startAfterEvt, endAfterEvt
 
   ########
   # on_settings_click: opens an SettingsWindow for configuration
   def on_settings_click(self, *args):
-    self.settingsWindow = MoneyTimer.SettingsWindow(self)
+    if not self.settingsOpen:
+      self.settingsWindow = MoneyTimer.SettingsWindow(self)
+      self.settingsOpen = True
+    else:
+      self.settingsWindow.lift()
 
   ########
   # configure: called from SettingsWindow; commits configuration
@@ -610,6 +718,8 @@ class MoneyTimer(Frame):
       for key in MoneyTimer.DEFAULT_SETTINGS.keys():
         if key not in temp.keys():
           temp[key] = MoneyTimer.DEFAULT_SETTINGS[key]
+        elif type(temp[key]) != type(MoneyTimer.DEFAULT_SETTINGS[key]):
+          temp[key] = MoneyTimer.DEFAULT_SETTINGS[key]
       return temp
     except Exception:
       return MoneyTimer.DEFAULT_SETTINGS
@@ -626,12 +736,58 @@ class MoneyTimer(Frame):
   ########
   # on_history_click: opens a HistoryWindow to display past recorded time/earnings
   def on_history_click(self, *args):
-    print("on_history_click")
+    if not self.historyOpen:
+      self.historyWindow = MoneyTimer.HistoryWindow(self)
+      self.historyOpen = True
+    else:
+      self.historyWindow.lift()
+
+  ########
+  # load_history: loads history from file
+  def load_history(self):
+    try:
+      f = open(MoneyTimer.HISTORY_FILE, "r")
+      s = f.read()
+      f.close()
+      temp = json.loads(s)
+      currTime = localtime()
+      toDel = None
+      for i in range(len(temp)): # if current day in file, forget it
+        if (temp[i]["year"] == currTime.tm_year and
+            temp[i]["mon"]  == currTime.tm_mon and
+            temp[i]["day"]  == currTime.tm_mday):
+          toDel = i
+          continue
+        for key in MoneyTimer.HISTORY_FORMAT.keys(): # validate entries
+          if not isinstance(temp[i][key], MoneyTimer.HISTORY_FORMAT[key]):
+            return []
+      if toDel != None:
+        del temp[toDel]
+      return temp
+    except Exception:
+      return []
 
   ########
   # save_history: saves history to file
   def save_history(self):
-    print("save_history")
+    earnings = self.secSoFar / 3600 * self.settings["hourlyRate"] * MoneyTimer.PERCENT_EARN
+    if self.todaysGoal != 0:
+      pct = self.secSoFar / (self.todaysGoal * 3600)
+    else:
+      pct = 1.0
+    currentDayStats = {"year": self.startDate[0],
+                       "mon" : self.startDate[1],
+                       "day" : self.startDate[2],
+                       "wday": self.startDay,
+                       "secSoFar": self.secSoFar,
+                       "earnings": (earnings * 100 // 1) / 100, # clip to cents
+                       "percent" : pct}
+    self.history.insert(0, currentDayStats)
+    s = json.dumps(self.history)
+
+    f = open(MoneyTimer.HISTORY_FILE, "w")
+    f.write(s)
+    f.close()
 
   ########
   # destroy: modified to save configurations and recorded time/earnings
@@ -639,6 +795,9 @@ class MoneyTimer(Frame):
     self.save_settings()
     self.save_history()
     super().destroy()
+# MoneyTimer
+################
+
 
 ########
 # main
