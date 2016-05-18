@@ -57,6 +57,17 @@ class MoneyTimer(Frame):
   AFTER_TIME = 500 # ms
   AFTER_TIME_SEC = AFTER_TIME / 1000 # s
   DAYS = ["Mon", "Tues", "Wed", "Thurs", "Fri", "Sat", "Sun"]
+
+  CREDITS_TEXT = \
+"""\
+Icons from NounProject contributors:
+Alexandr Cherkinsky
+Arthur Shlain
+Dalpat Prajapati
+David Francisco
+Mateo Zlatar\
+"""
+
   # default configuration
   DEFAULT_SETTINGS = {"autoLunchEnabled"  : False,
                       "autoLunchStartTime": [12, 0],
@@ -471,10 +482,12 @@ class MoneyTimer(Frame):
   #   Members:
   #   Methods:
   #     __init__ : creates display
+  #     destroy  : updates bool of parent, then destroys
   class HistoryWindow(Toplevel):
 
     def __init__(self, root):
       Toplevel.__init__(self, root)
+      self.title("History [Money Timer]")
       self.scrollbar = Scrollbar(self)
       self.scrollbar.pack(side = "right", fill = Y)
       self.text = Text(self,
@@ -482,25 +495,28 @@ class MoneyTimer(Frame):
                        yscrollcommand = self.scrollbar.set)
       self.text.pack(side = "right", fill = Y)
       self.scrollbar.config(command = self.text.yview)
-      for entry in self.master.history:
-        monStr  = str(entry["mon"]) if entry["mon"] >= 10 else "0" + str(entry["mon"])
-        dayStr  = str(entry["day"]) if entry["day"] >= 10 else "0" + str(entry["day"])
-        intHr   = int(entry["secSoFar"] // 3600)
-        intMin  = int(entry["secSoFar"] % 3600 // 60)
-        intSec  = int(entry["secSoFar"] % 60)
-        strMin  = str(intMin) if intMin >= 10 else "0" + str(intMin)
-        strSec  = str(intSec) if intSec >= 10 else "0" + str(intSec)
+      if len(self.master.history) > 0:
+        for entry in self.master.history:
+          monStr  = str(entry["mon"]) if entry["mon"] >= 10 else "0" + str(entry["mon"])
+          dayStr  = str(entry["day"]) if entry["day"] >= 10 else "0" + str(entry["day"])
+          intHr   = int(entry["secSoFar"] // 3600)
+          intMin  = int(entry["secSoFar"] % 3600 // 60)
+          intSec  = int(entry["secSoFar"] % 60)
+          strMin  = str(intMin) if intMin >= 10 else "0" + str(intMin)
+          strSec  = str(intSec) if intSec >= 10 else "0" + str(intSec)
 
-        inputStr = "{}-{}-{} {}\t{}:{}:{}\t${:.2f}\t{:.1f}%\n".format(entry["year"],
-                                                                      monStr,
-                                                                      dayStr,
-                                                                      entry["wday"],
-                                                                      intHr,
-                                                                      strMin,
-                                                                      strSec,
-                                                                      entry["earnings"],
-                                                                      entry["percent"])
-        self.text.insert(END, inputStr)
+          inputStr = "{}-{}-{} {}\t{}:{}:{}\t${:.2f}\t{:.1f}%\n".format(entry["year"],
+                                                                        monStr,
+                                                                        dayStr,
+                                                                        entry["wday"],
+                                                                        intHr,
+                                                                        strMin,
+                                                                        strSec,
+                                                                        entry["earnings"],
+                                                                        entry["percent"])
+          self.text.insert(END, inputStr)
+      else:
+        self.text.insert(END, "No history recorded.")
 
       self.text.config(state = DISABLED)
 
@@ -517,6 +533,7 @@ class MoneyTimer(Frame):
     self.paused = False
     self.settingsOpen = False
     self.historyOpen  = False
+    self.credits = None
     if self.settings["autoLunchEnabled"]:
       self.startLunchEvt, self.endLunchEvt = self.make_lunch_events()
     else:
@@ -524,27 +541,50 @@ class MoneyTimer(Frame):
       self.endLunchEvt   = None
 
     # menubar
-    self.menuBar = Menu(root)
-    self.menuBar.add_command(label = "Settings",
-                             command = self.on_settings_click)
-    self.menuBar.add_separator()
-    self.menuBar.add_command(label = "History",
-                             command = self.on_history_click)
-    self.menuBar.add_separator()
-    root.config(menu = self.menuBar)
+    self.menuBar = {}
+    self.menuBar["frame"] = Frame(self)
+    self.menuBar["settingsIcon"]   = PhotoImage(file = "settings.gif")
+    self.menuBar["settingsButton"] = Button(self.menuBar["frame"],
+                                            image    = self.menuBar["settingsIcon"],
+                                            text     = "Settings",
+                                            compound = LEFT,
+                                            relief   = GROOVE,
+                                            command  = self.on_settings_click)
+    self.menuBar["settingsButton"].pack(side = "left", fill = Y)
+    self.menuBar["historyIcon"]    = PhotoImage(file = "history.gif")
+    self.menuBar["historyButton"]  = Button(self.menuBar["frame"],
+                                            image    = self.menuBar["historyIcon"],
+                                            text     = "History",
+                                            compound = LEFT,
+                                            relief   = GROOVE,
+                                            command  = self.on_history_click)
+    self.menuBar["historyButton"].pack(side = "right", fill = Y)
+    self.menuBar["stopwatchIcon"] = PhotoImage(file = "stopwatch.gif")
+    self.menuBar["stopwatchButton"] = Button(self.menuBar["frame"],
+                                             image   = self.menuBar["stopwatchIcon"],
+                                             relief  = GROOVE,
+                                             command = self.on_credits_click)
+    self.menuBar["stopwatchButton"].pack(side = "top", fill = BOTH)
+    self.menuBar["frame"].pack(side="top", fill = X)
 
     # hotkeys
-    self.bind("<Control-o>", self.on_settings_click)
-    self.bind("<Control-O>", self.on_settings_click)
+    self.bind("<Control-s>", self.on_settings_click)
+    self.bind("<Control-S>", self.on_settings_click)
     self.bind("<Control-h>", self.on_history_click)
     self.bind("<Control-H>", self.on_history_click)
     self.focus_set()
 
     # time and pause button
     self.upperFrame = Frame(self)
+    self.spacerLabel = Label(self.upperFrame, # too lazy to actually try and use pack efficiently
+                             text = "      ")
+    self.spacerLabel.pack(side = "left")
     self.timeLabel = Label(self.upperFrame,
                            text = "config in\nsetup window")
     self.timeLabel.pack(side = "left")
+    self.spacerLabel2 = Label(self.upperFrame,
+                              text = "      ")
+    self.spacerLabel2.pack(side = "left")
     self.pauseButton = Button(self.upperFrame,
                               command = self.toggle_pause)
     self.pauseButtonVar           = StringVar(self.pauseButton,"Pause")
@@ -553,8 +593,8 @@ class MoneyTimer(Frame):
     self.pauseButton.config(image = self.pauseButton.pauseImage,
                             textvariable = self.pauseButtonVar,
                             compound = LEFT)
-    self.pauseButton.pack(side = "left")
-    self.upperFrame.pack(side = "top")
+    self.pauseButton.pack(side = "right")
+    self.upperFrame.pack(side = "top", fill = X)
 
     # progress bar
     self.progressBar = Canvas(self,
@@ -781,13 +821,26 @@ class MoneyTimer(Frame):
                        "wday": self.startDay,
                        "secSoFar": self.secSoFar,
                        "earnings": (earnings * 100 // 1) / 100, # clip to cents
-                       "percent" : pct}
+                       "percent" : pct * 100}
     self.history.insert(0, currentDayStats)
     s = json.dumps(self.history)
 
     f = open(MoneyTimer.HISTORY_FILE, "w")
     f.write(s)
     f.close()
+
+  ########
+  # on_credits_click: displays credits
+  def on_credits_click(self):
+    if self.credits != None:
+      self.credits.destroy()
+    self.credits = Toplevel(self)
+    self.credits.title("Credits [Money Timer]")
+    self.credits.text = Text(self.credits,
+                             width = 50)
+    self.credits.text.insert(END, MoneyTimer.CREDITS_TEXT)
+    self.credits.text.config(state = DISABLED)
+    self.credits.text.pack(side = "top", fill = BOTH)
 
   ########
   # destroy: modified to save configurations and recorded time/earnings
@@ -800,7 +853,7 @@ class MoneyTimer(Frame):
 
 
 ########
-# main
+# main: if you need a description for this, I cannot help you
 def main():
   root = Tk()
   root.title("Money Timer")
