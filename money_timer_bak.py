@@ -1,6 +1,5 @@
 from tkinter import *
 from time import *
-from clockface import ClockFace
 import json
 
 
@@ -500,23 +499,20 @@ Mateo Zlatar\
         for entry in self.master.history:
           monStr  = str(entry["mon"]) if entry["mon"] >= 10 else "0" + str(entry["mon"])
           dayStr  = str(entry["day"]) if entry["day"] >= 10 else "0" + str(entry["day"])
-          wDayStr = entry["wday"] + " "*(5-len(entry["wday"])) if 5 - len(entry["wday"]) > 0 else entry["wday"]
           intHr   = int(entry["secSoFar"] // 3600)
           intMin  = int(entry["secSoFar"] % 3600 // 60)
           intSec  = int(entry["secSoFar"] % 60)
           strMin  = str(intMin) if intMin >= 10 else "0" + str(intMin)
           strSec  = str(intSec) if intSec >= 10 else "0" + str(intSec)
-          earningsStr = "{:.2f}".format(entry["earnings"])
-          earningsStr += " "*(7 - len(earningsStr)) if ((7 - len(earningsStr)) > 0) else earningsStr
 
-          inputStr = "{}-{}-{} {}\t{}:{}:{}\t${}\t{:.1f}%\n".format(entry["year"],
+          inputStr = "{}-{}-{} {}\t{}:{}:{}\t${:.2f}\t{:.1f}%\n".format(entry["year"],
                                                                         monStr,
                                                                         dayStr,
-                                                                        wDayStr,
+                                                                        entry["wday"],
                                                                         intHr,
                                                                         strMin,
                                                                         strSec,
-                                                                        earningsStr,
+                                                                        entry["earnings"],
                                                                         entry["percent"])
           self.text.insert(END, inputStr)
       else:
@@ -568,7 +564,7 @@ Mateo Zlatar\
                                              image   = self.menuBar["stopwatchIcon"],
                                              relief  = GROOVE,
                                              command = self.on_credits_click)
-    self.menuBar["stopwatchButton"].pack(side = "top", fill = BOTH, expand = 1)
+    self.menuBar["stopwatchButton"].pack(side = "top", fill = BOTH)
     self.menuBar["frame"].pack(side="top", fill = X)
 
     # hotkeys
@@ -862,10 +858,8 @@ def main():
   root = Tk()
   root.title("Money Timer")
   root.lift()
-  cf = ClockFace(root, size = 100)
-  cf.pack(side = "left")
   mt = MoneyTimer(root)
-  mt.pack(side = "left")
+  mt.pack()
 
   root.mainloop()
 
