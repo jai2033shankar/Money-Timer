@@ -45,3 +45,8 @@ $RECYCLE.BIN/
 Network Trash Folder
 Temporary Items
 .apdisk
+
+# Extraneous resources
+money_timer_history.json
+money_timer_settings.json
+/__pycache__
