@@ -638,6 +638,8 @@ Mateo Zlatar\
 
     # has to be done after startDay and startDate are initialized
     self.history = self.load_history()
+    for entry in self.history:
+      entry["percent"] = (entry["percent"] * 100 // 1) / 100
 
     self.update()
     del self.setupWindow
@@ -825,7 +827,7 @@ Mateo Zlatar\
                        "wday": self.startDay,
                        "secSoFar": self.secSoFar,
                        "earnings": (earnings * 100 // 1) / 100, # clip to cents
-                       "percent" : pct * 100}
+                       "percent" : (pct * 10000 // 1) / 100 } # clip to 2 decimals
     self.history.insert(0, currentDayStats)
     s = json.dumps(self.history)
 
@@ -862,7 +864,7 @@ def main():
   root = Tk()
   root.title("Money Timer")
   root.lift()
-  cf = ClockFace(root, size = 100)
+  cf = ClockFace(root, size = 100, smooth = True, bg = PhotoImage(file = "art.gif"), handcolor = "#000000", markcolor = "#000000")
   cf.pack(side = "left")
   mt = MoneyTimer(root)
   mt.pack(side = "left")
