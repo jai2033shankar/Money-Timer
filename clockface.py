@@ -1,7 +1,33 @@
+################################
+# clockface.py
+# Noah Ansel
+# 2016-12-17
+# ------------------------------
+# A configurable clock widget for use in Tkinter programs.
+################################
+
+# imports
 from tkinter import *
 from time import localtime
 from math import *
 
+
+################
+# ClockFace: A configurable clock widget for use in Tkinter programs.
+# Has some support for basic Tkinter methods, but not all.
+#   Configurable Parameters:
+#     background  : Either a color or a Tkinter-compatible PhotoImage or BitmapImage.
+#     handcolor   : Color of clock hands.
+#     markcolor   : Color of hour marks/numbers.
+#     marks       : Type of hour marks to use.
+#                   Must be one of TICKS, ARABIC, ROMAN.
+#     shape       : Clock shape to use. TODO: Implement this functionality.
+#                   Must be one of SQUARE or ROUND.
+#     size        : Size of the clock face in pixels. May be slightly smaller
+#                   due to widget borders.
+#     smooth      : Flag indicating whether hands should update on <1s intervals.
+#     wedge_size  : Percentage of radius wedges should occupy. TODO: Implement this.
+#     update_rate : When smooth enabled, the amount of updates per second.
 class ClockFace:
 
   # tick mark types
@@ -13,6 +39,7 @@ class ClockFace:
   SQUARE = "SQUARE"
   ROUND  = "ROUND"
 
+  # default configuration values
   DEFAULT_CONFIG = {"background" : "#DDEEEE",
                     "handcolor"  : "#0000EE",
                     "markcolor"  : "#FF9933",
@@ -23,27 +50,25 @@ class ClockFace:
                     "wedge_size" : 0.5,
                     "update_rate" : 10}
 
-
+  # default colors for non-configurable parameters
   BG_COLOR_WITH_IMAGE = "#000000"
-
   DEFAULT_WEDGE_COLOR = "#FFDD00"
 
-  OFFSET = 3
-
-  STEP_12 = 2 * pi / 12
-  STEP_60 = 2 * pi / 60
-
-  TICK_SIZE = 0.8
+  # drawing constants
+  _OFFSET = 3
+  _STEP_12 = 2 * pi / 12
+  _STEP_60 = 2 * pi / 60
+  _TICK_SIZE = 0.8
 
   _FONTS = {ARABIC: "Helvetica",
             ROMAN:  "Times New Roman"}
 
   ########
-  # __init__: constructor
-  #           Initializes canvas, sets config if given in **kwargs.
-  def __init__(self,
-               master = None,
-               **kwargs):
+  # Initializes canvas, sets config if given as parameters.
+  # See class description for configurable parameters.
+  #   Params:
+  #     master : Reference to parent Tkinter object.
+  def __init__(self, master = None, **kwargs):
 
     self._configVars = {} # copy over default config
     for k, v in ClockFace.DEFAULT_CONFIG.items():
@@ -56,7 +81,7 @@ class ClockFace:
                           width = self._configVars["size"],
                           height = self._configVars["size"])
 
-    self._mid = self._configVars["size"] / 2 + ClockFace.OFFSET
+    self._mid = self._configVars["size"] / 2 + ClockFace._OFFSET
     self._bgImg = None
     self._bgImgId = None
     self._ms = 0
@@ -70,9 +95,14 @@ class ClockFace:
   # Configuration
   ################
 
+  ########
+  # Alternate name for config method.
   def configure(self, **kwargs):
     self.config(**kwargs)
 
+  ########
+  # Updates configuration of the object and updates view as needed.
+  # See class description for configurable parameters.
   def config(self, **kwargs):
     redraw = False
     for key, val in kwargs.items():
@@ -183,6 +213,13 @@ class ClockFace:
     if redraw:
       self._init_face()
 
+  ########
+  # Obtains a config variable. Note that for 'bg', return can be a PhotoImage or
+  # BitmapImage object.
+  # See class description for configurable parameters.
+  #   Params:
+  #     key : Name of parameter to be fetched.
+  #   Returns: Value of requested parameter.
   def cget(self, key):
     if isinstance(key, str):
       if key in self._configVars.keys():
@@ -201,12 +238,15 @@ class ClockFace:
   # Private methods
   ################
 
+  ########
+  # Initializes canvas display including hands, background, marks, and wedges.
+  # TODO: implement wedges.
   def _init_face(self):
     self._canvas.delete("all")
     self._bgImgId = self._canvas.create_image(self._mid,
                                               self._mid,
                                               image = self._bgImg)
-    self._mid = self._configVars["size"] / 2 + ClockFace.OFFSET
+    self._mid = self._configVars["size"] / 2 + ClockFace._OFFSET
 
     self._hrLen = self._configVars["size"] * 0.2
     self._minLen = self._configVars["size"] * 0.3
@@ -311,25 +351,47 @@ class ClockFace:
                                      smooth = True)
 
 
+  ########
+  # Helper function to get angles of hands based on current time.
+  #   Returns: Hour, minute, and second hand angles, in that order.
   def _get_hand_angles(self):
-    hrAng = ClockFace.STEP_12 * (self._time.tm_hour % 12 +
+    hrAng = ClockFace._STEP_12 * (self._time.tm_hour % 12 +
                                  self._time.tm_min / 60 +
                                  self._time.tm_sec / 3600)
-    minAng = ClockFace.STEP_60 * (self._time.tm_min + self._time.tm_sec / 60)
+    minAng = ClockFace._STEP_60 * (self._time.tm_min + self._time.tm_sec / 60)
     if self._configVars["smooth"]:
-      secAng = ClockFace.STEP_60 * (self._time.tm_sec + self._ms / 1000)
+      secAng = ClockFace._STEP_60 * (self._time.tm_sec + self._ms / 1000)
     else:
-      secAng = ClockFace.STEP_60 * (self._time.tm_sec)
+      secAng = ClockFace._STEP_60 * (self._time.tm_sec)
     return hrAng, minAng, secAng
     raise NotImplementedError()
 
+  ########
+  # Helper function to get line coordinates given fixed location, length, and direction.
+  #   Params:
+  #     x, y  : Cartesian coordinates of start point.
+  #     mag   : Length of the line.
+  #     theta : Rotation counter-clockwise from x-axis, in radians.
+  #   Returns: Coordinates of the line.
   def _get_line_coords(self, x, y, mag, theta):
     dx, dy = self._get_components(mag, theta)
     return x, y, x+dx, y-dy
 
+  ########
+  # Helper function to convert polar coordinates to Cartesian coordinates.
+  #   Params:
+  #     mag   : Distance from origin.
+  #     theta : Rotation counter-clockwise from x-axis, in radians.
+  #   Returns: Cartesian coordinates of point as (x,y).
   def _get_components(self, mag, theta):
     return mag*sin(theta), mag*cos(theta)
 
+  ########
+  # Helper function to convert a number into roman numerals.
+  # Only supports numbers up to 99.
+  #   Params:
+  #     num : Number to be processed.
+  #   Returns: Roman numeral representation of number.
   def _roman_num(self, num):
     ret = ""
 
@@ -356,10 +418,9 @@ class ClockFace:
 
     return ret
 
-
-
+  ########
+  # Resizes the clockface based on current configuration and redraws face.
   def _resize(self):
-    # raise NotImplementedError()
     self._canvas.delete("all")
     self._canvas.config(width = self._configVars["size"],
                         height = self._configVars["size"])
@@ -370,6 +431,10 @@ class ClockFace:
                                               image = self._bgImg)
     self._init_face()
 
+  ########
+  # Updates hands and wedges based on current time. TODO: implement wedges.
+  # Runs once per second if 'smooth' disabled.
+  # Otherwise runs 'update_rate' times per second.
   def _tick(self):
     newTime = localtime()
     if newTime.tm_sec != self._time.tm_sec:
@@ -387,11 +452,16 @@ class ClockFace:
 
     self._canvas.after(1000 // self._configVars["update_rate"], self._tick)
 
-  def _valid_hex(self, s):
-    if len(s) == 7:
-      if s[0] == '#':
+  ########
+  # Determines if given string is a valid Tkinter hex string.
+  #   Params:
+  #     hexString : String to be tested.
+  #   Returns: True if valid, False if not.
+  def _valid_hex(self, hexString):
+    if len(hexString) == 7:
+      if hexString[0] == '#':
         for i in range(1,7):
-          if s[i].lower() not in '0123456789abcdef':
+          if hexString[i].lower() not in '0123456789abcdef':
             return False
         return True
     return False
@@ -401,21 +471,29 @@ class ClockFace:
   # Custom methods
   ################
 
+  ########
+  # TODO: Implement and document.
   def begin_wedge(self, color = DEFAULT_WEDGE_COLOR, tags = None):
     raise NotImplementedError()
 
+  ########
+  # TODO: Implement and document.
   def end_wedge(self):
     raise NotImplementedError()
 
+  ########
+  # TODO: Implement and document.
   def get_wedges(self, tags):
     raise NotImplementedError()
 
+  ########
+  # TODO: Implement and document.
   def clear_wedges(self, *args):
     raise NotImplementedError()
 
 
   ################
-  # Geometry managers
+  # Geometry managers: See Tkinter documentation.
   ################
 
   def grid(self, **kwargs):
@@ -437,7 +515,7 @@ class ClockFace:
     return self._canvas.place_forget(**kwargs)
 
   ################
-  # Misc Tkinter Methods
+  # Misc Tkinter Methods: See Tkinter documentation.
   ################
 
   def bind(self, **kwargs):
@@ -463,6 +541,9 @@ class ClockFace:
 
   def quit(self, **kwargs):
     return self._canvas.quit(**kwargs)
+# ClockFace
+################
+
 
 
 ################
@@ -471,10 +552,10 @@ if __name__ == "__main__":
   root = Tk()
   root.title("ClockFace [Test Suite]")
   cf = ClockFace(root, smooth = True, update_rate = 10)
-  photo = PhotoImage(file = "placeholder_img.gif")
-  photo2 = PhotoImage(file = "art.gif")
+  photo = PhotoImage(file = "art.gif")
+  photo2 = PhotoImage(file = "art2.gif")
   cf2 = ClockFace(root, bg = photo2, size = 400, handcolor = "#000000", marks = ClockFace.ARABIC)
-  root.after(2000, lambda: cf.config(bg = photo))
+  root.after(5000, lambda: cf.config(size = cf.cget("size") + 50, bg = photo, handcolor = "#00FF00", marks = ClockFace.ROMAN, markcolor = "#FFFFFF"))
   cf.grid(row = 0, column = 0)
   cf2.grid(row = 1, column = 0)
 
@@ -483,6 +564,6 @@ if __name__ == "__main__":
   minis = []
   for i in range(5):
     minis.append(ClockFace(miniFrame, size = 150 + 15 * i, smooth = True, update_rate = i*2 + 1, marks = ClockFace.ROMAN))
-    minis[i].grid(row = i % 5, column = i // 5)
+    minis[i].grid(row = i % 3, column = i // 3)
 
   root.mainloop()
